@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Simple Chess Game</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #2c3e50;
+      color: #fff;
+      text-align: center;
+    }
+    h1 {
+      margin-top: 24px;
+      margin-bottom: 24px;
+    }
+    #chessboard {
+      display: inline-block;
+      border: 5px solid #2d2d2d;
+      margin: 20px auto;
+    }
+    .row {
+      display: flex;
+    }
+    .square {
+      width: 60px;
+      height: 60px;
+      vertical-align: middle;
+      text-align: center;
+      line-height: 60px;
+      font-size: 38px;
+      user-select: none;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .square.white {
+      background: #f0d9b5;
+    }
+    .square.black {
+      background: #b58863;
+    }
+    .square.selected {
+      outline: 3px solid #3498db;
+    }
+    .square.move {
+      background: #8ec07c !important;
+    }
+    #status {
+      margin: 20px auto;
+      font-size: 1.2em;
+    }
+    #resetBtn {
+      background: #3498db;
+      color: #fff;
+      border: none;
+      padding: 10px 24px;
+      font-size: 1em;
+      margin: 18px 0 0 0;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #resetBtn:hover {
+      background: #217dbb;
+    }
+    #message {
+      margin-top: 15px;
+      font-size: 1.4em;
+      font-weight: bold;
+      color: #f2b134;
+    }
+  </style>
+</head>
+<body>
+  <h1>Simple Chess</h1>
+  <button id="resetBtn">Reset Game</button>
+  <div id="chessboard"></div>
+  <div id="status"></div>
+  <div id="message"></div>
+  <script>
+    const initialBoard = [
+      ["bR","bN","bB","bQ","bK","bB","bN","bR"],
+      ["bP","bP","bP","bP","bP","bP","bP","bP"],
+      [null,null,null,null,null,null,null,null],
+      [null,null,null,null,null,null,null,null],
+      [null,null,null,null,null,null,null,null],
+      [null,null,null,null,null,null,null,null],
+      ["wP","wP","wP","wP","wP","wP","wP","wP"],
+      ["wR","wN","wB","wQ","wK","wB","wN","wR"],
+    ];
+
+    const pieceSymbols = {
+      wK: "♔", wQ: "♕", wR: "♖", wB: "♗", wN: "♘", wP: "♙",
+      bK: "♚", bQ: "♛", bR: "♜", bB: "♝", bN: "♞", bP: "♟"
+    };
+    const WHITE = "w", BLACK = "b";
+
+    let board, turn, selected, validMoves, checkmate, winner;
+
+    function resetGame() {
+      board = JSON.parse(JSON.stringify(initialBoard));
+      turn = WHITE;
+      selected = null;
+      validMoves = [];
+      checkmate = false;
+      winner = null;
+      renderBoard();
+      renderStatus();
+      document.getElementById("message").innerText = '';
+    }
+
+    function renderBoard() {
+      const boardElem = document.getElementById('chessboard');
+      boardElem.innerHTML = '';
+      for (let i=0; i<8; i++) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        for (let j=0; j<8; j++) {
+          const sq = document.createElement('div');
+          let color = (i + j) % 2 === 0 ? 'white' : 'black';
+          sq.className = 'square ' + color;
+          sq.dataset.row = i;
+          sq.dataset.col = j;
+          if (selected && selected[0] === i && selected[1] === j)
+            sq.className += ' selected';
+          if (pieceSymbols[board[i][j]]) sq.textContent = pieceSymbols[board[i][j]];
+          if (validMoves.some(([x,y]) => x === i && y === j)) 
+            sq.className += ' move';
+          sq.addEventListener('click', () => handleClick(i,j));
+          row.appendChild(sq);
+        }
+        boardElem.appendChild(row);
+      }
+    }
+
+    function renderStatus() {
+      if (checkmate) {
+        document.getElementById('status').innerText = '';
+        document.getElementById('message').innerText = 
+          `Checkmate! ${winner === WHITE ? "White" : "Black"} wins!`;
+      } else {
+        document.getElementById('status').innerText =
+          `Turn: ${(turn===WHITE ? "White":"Black")}`;
+        document.getElementById('message').innerText = '';
+      }
+    }
+
+    function handleClick(row, col) {
+      if (checkmate) return;
+      const piece = board[row][col];
+      if (selected) {
+        if (validMoves.some(([r,c]) => r === row && c === col)) {
+          movePiece(selected, [row, col]);
+          selected = null;
+          validMoves = [];
+          if (isCheckmate(otherColor(turn))) {
+            checkmate = true;
+            winner = turn;
+          }
+          renderBoard();
+          renderStatus();
+          return;
+        } else if (piece && piece[0] === turn) {
+          selected = [row, col];
+          validMoves = getMoves(row, col);
+          renderBoard();
+          renderStatus();
+          return;
+        } else {
+          selected = null;
+          validMoves = [];
+          renderBoard();
+          renderStatus();
+          return;
+        }
+      }
+      if (piece && piece[0] === turn) {
+        selected = [row, col];
+        validMoves = getMoves(row, col);
+        renderBoard();
+        renderStatus();
+      }
+    }
+
+    function getMoves(r, c) {
+      const piece = board[r][c];
+      if (!piece) return [];
+      const moves = [];
+      const color = piece[0];
+      const opp = otherColor(color);
+
+      function push(row, col, captureOnly=false) {
+        if (row < 0 || row > 7 || col < 0 || col > 7) return false;
+        let dest = board[row][col];
+        if (dest) {
+          if (dest[0] !== color) moves.push([row,col]);
+          return false;
+        } else if (!captureOnly) {
+          moves.push([row,col]);
+          return true;
+        }
+        return false;
+      }
+
+      switch (piece[1]) {
+        case 'P': {
+          let dir = color === WHITE ? -1 : 1;
+          if (!board[r+dir][c]) {
+            moves.push([r+dir, c]);
+            if ((color === WHITE && r === 6) || (color === BLACK && r === 1)) {
+              if (!board[r+2*dir][c]) moves.push([r+2*dir, c]);
+            }
+          }
+          for (let dc of [-1,1]) {
+            let tr = r+dir, tc = c+dc;
+            if (tc >= 0 && tc < 8 && board[tr] && board[tr][tc] && board[tr][tc][0] === opp) {
+              moves.push([tr,tc]);
+            }
+          }
+          break;
+        }
+        case 'N': {
+          let dirs = [[-2,1],[-2,-1],[2,1],[2,-1],[-1,2],[1,2],[-1,-2],[1,-2]];
+          for (const [dr,dc] of dirs) 
+            push(r+dr, c+dc);
+          break;
+        }
+        case 'B': {
+          for (const [dr,dc] of [[1,1],[1,-1],[-1,1],[-1,-1]]) {
+            for (let k=1;k<8;k++) if (!push(r+dr*k, c+dc*k)) break;
+          }
+          break;
+        }
+        case 'R': {
+          for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]])
+            for (let k=1;k<8;k++) if (!push(r+dr*k, c+dc*k)) break;
+          break;
+        }
+        case 'Q': {
+          for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]])
+            for (let k=1;k<8;k++) if (!push(r+dr*k, c+dc*k)) break;
+          break;
+        }
+        case 'K': {
+          for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]])
+            push(r+dr, c+dc);
+          break;
+        }
+      }
+      return moves.filter(([tr,tc]) => !moveLeavesKingInCheck(r,c,tr,tc));
+    }
+
+    function movePiece([r1,c1], [r2,c2]) {
+      let piece = board[r1][c1];
+      board[r1][c1] = null;
+      board[r2][c2] = piece;
+      if (piece[1]==='P' && (r2 === 0 || r2 === 7)) {
+        board[r2][c2] = piece[0] + 'Q';
+      }
+      turn = otherColor(turn);
+    }
+
+    function otherColor(color) {
+      return color === WHITE ? BLACK : WHITE;
+    }
+
+    function moveLeavesKingInCheck(r1,c1,r2,c2) {
+      let save = [board[r2][c2], board[r1][c1]];
+      let piece = board[r1][c1];
+      board[r1][c1] = null;
+      board[r2][c2] = piece;
+      let inCheck = isKingInCheck(piece[0]);
+      board[r1][c1] = save[1];
+      board[r2][c2] = save[0];
+      return inCheck;
+    }
+
+    function isKingInCheck(color) {
+      let [kr, kc] = [-1, -1];
+      for (let i=0;i<8;i++) for (let j=0;j<8;j++) {
+        if (board[i][j]===(color+'K')) [kr,kc]=[i,j];
+      }
+      let opp = otherColor(color);
+      for (let i=0;i<8;i++) for (let j=0;j<8;j++) {
+        if (board[i][j] && board[i][j][0] === opp) {
+          if (getMovesRaw(i,j).some(([r,c])=>r===kr&&c===kc)) return true;
+        }
+      }
+      return false;
+    }
+
+    function getMovesRaw(r,c) {
+      const piece = board[r][c];
+      if (!piece) return [];
+      const moves = [];
+      const color = piece[0];
+      const opp = otherColor(color);
+
+      function push(row, col, captureOnly=false) {
+        if (row < 0 || row > 7 || col < 0 || col > 7) return false;
+        let dest = board[row][col];
+        if (dest) {
+          if (dest[0] !== color) moves.push([row,col]);
+          return false;
+        } else if (!captureOnly) {
+          moves.push([row,col]);
+          return true;
+        }
+        return false;
+      }
+      switch (piece[1]) {
+        case 'P': {
+          let dir = color === WHITE ? -1 : 1;
+          if (!board[r+dir][c]) { moves.push([r+dir, c]); 
+            if ((color === WHITE && r === 6) || (color === BLACK && r === 1)) {
+              if (!board[r+2*dir][c]) moves.push([r+2*dir, c]);
+            }
+          }
+          for (let dc of [-1,1]) {
+            let tr = r+dir, tc = c+dc;
+            if (tc >= 0 && tc < 8 && board[tr] && board[tr][tc] && board[tr][tc][0] === opp) {
+              moves.push([tr,tc]);
+            }
+          }
+          break;
+        }
+        case 'N': {
+          let dirs = [[-2,1],[-2,-1],[2,1],[2,-1],[-1,2],[1,2],[-1,-2],[1,-2]];
+          for (const [dr,dc] of dirs) push(r+dr, c+dc);
+          break;
+        }
+        case 'B': {
+          for (const [dr,dc] of [[1,1],[1,-1],[-1,1],[-1,-1]]) {
+            for (let k=1;k<8;k++) if (!push(r+dr*k, c+dc*k)) break;
+          }
+          break;
+        }
+        case 'R': {
+          for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]])
+            for (let k=1;k<8;k++) if (!push(r+dr*k, c+dc*k)) break;
+          break;
+        }
+        case 'Q': {
+          for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]])
+            for (let k=1;k<8;k++) if (!push(r+dr*k, c+dc*k)) break;
+          break;
+        }
+        case 'K': {
+          for (const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]])
+            push(r+dr, c+dc);
+          break;
+        }
+      }
+      return moves;
+    }
+
+    function isCheckmate(color) {
+      if (!isKingInCheck(color)) return false;
+      for (let i=0;i<8;i++) for (let j=0;j<8;j++)
+        if (board[i][j] && board[i][j][0] === color) {
+          if (getMoves(i,j).length > 0) return false;
+        }
+      return true;
+    }
+
+    document.getElementById('resetBtn').onclick = resetGame;
+
+    resetGame();
+  </script>
+</body>
+</html>
